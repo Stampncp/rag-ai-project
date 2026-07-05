@@ -1,0 +1,29 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: rag_db
+    ports:
+      - "5432:5432"
+
+  api-service:
+    build: ./apps/api-service
+    ports:
+      - "8000:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DATABASE_URL=postgresql://admin:password123@db:5432/rag_db
+    depends_on:
+      - db
+
+  web-frontend:
+    build: ./apps/web-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - API_SERVICE_URL=http://api-service:8000/api/chat
+    depends_on:
+      - api-service
