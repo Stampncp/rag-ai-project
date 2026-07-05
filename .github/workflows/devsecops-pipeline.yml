@@ -1,0 +1,83 @@
+name: Enterprise DevSecOps Pipeline
+
+on:
+  push:
+    branches: [ main, staging ]
+
+jobs:
+  security_and_build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      # =========================================================
+      # 🛡️ Snyk Security Scan & Security Gate
+      # =========================================================
+      - name: Run Snyk to check for vulnerabilities (SCA & SAST)
+        uses: snyk/actions/python@master
+        continue-on-error: false
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+
+      # =========================================================
+      # 🐳 Docker Build & Push to Azure Registry (ACR)
+      # =========================================================
+      - name: Azure Container Registry Login
+        uses: azure/docker-login@v1
+        with:
+          login-server: stampncpragacr2026.azurecr.io
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and Push Docker Image
+        run: |
+          # 1. Build และ Push ฝั่ง API Service
+          docker build -t stampncpragacr2026.azurecr.io/api-service:${{ github.sha }} -f apps/api-service/Dockerfile apps/api-service/
+          docker build -t stampncpragacr2026.azurecr.io/api-service:latest -f apps/api-service/Dockerfile apps/api-service/
+          docker push stampncpragacr2026.azurecr.io/api-service:${{ github.sha }}
+          docker push stampncpragacr2026.azurecr.io/api-service:latest
+          
+          # 2. Build และ Push ฝั่ง Web Frontend (Streamlit)
+          docker build -t stampncpragacr2026.azurecr.io/web-frontend:${{ github.sha }} -f apps/web-frontend/Dockerfile apps/web-frontend/
+          docker build -t stampncpragacr2026.azurecr.io/web-frontend:latest -f apps/web-frontend/Dockerfile apps/web-frontend/
+          docker push stampncpragacr2026.azurecr.io/web-frontend:${{ github.sha }}
+          docker push stampncpragacr2026.azurecr.io/web-frontend:latest
+
+  deploy:
+    needs: security_and_build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set AKS Context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: rg-rag-project
+          cluster-name: aks-rag-cluster
+
+      # =========================================================
+      # 🚀 Deploy แยก Environment ตาม Branch
+      # =========================================================
+      - name: Deploy to Staging Namespace
+        if: github.ref == 'refs/heads/staging'
+        run: |
+          kubectl apply -f k8s/staging/ -n staging
+
+      - name: Deploy to Production Namespace
+        if: github.ref == 'refs/heads/main'
+        run: |
+          kubectl apply -f k8s/prod/ -n prod
