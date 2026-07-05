@@ -1,14 +1,15 @@
-import os  # 🟢 ห้ามลบ! จำเป็นต้องใช้ดึง API Key
-from fastapi import FastAPI, UploadFile, File  # 🟢 รวมกลุ่มอิมพอร์ต FastAPI ไว้ด้วยกัน
+import os
+from fastapi import FastAPI, UploadFile, File
 from pydantic import BaseModel
 import google.generativeai as genai
 
+# 🟢 ประกาศตัวแปรอ็อบเจกต์หลัก (ห้ามขาดบรรทัดนี้เด็ดขาด!)
 app = FastAPI(title="AI RAG API Service with Gemini")
 
-# 1. สร้างกล่องความรู้จำลอง (In-Memory Database) ไว้เก็บข้อความที่อัปโหลดเข้ามา
+# คลังเก็บความรู้จำลองในหน่วยความจำ
 KNOWLEDGE_STORE = []
 
-# ดึงค่า API Key จาก Kubernetes Secret
+# ดึงค่า API Key จาก Kubernetes Secret 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -19,17 +20,16 @@ class QueryRequest(BaseModel):
 class IngestRequest(BaseModel):
     content: str
 
-# --- Endpoint 1: สำหรับคุย (Chat) และดึงข้อมูลบริบทจากคลังมาอ้างอิง ---
+# 1. Endpoint เดิมสำหรับใช้ Chat
 @app.post("/api/chat")
 async def chat_with_gemini(request: QueryRequest):
     if not GEMINI_API_KEY:
-        return {"answer": "Error: Gemini API Key missing ในระบบคลาวด์"}
+        return {"answer": "Error: Gemini API Key missing"}
     
-    # 🔍 ส่วนดึงบริบท (RAG Retrieval)
     context = ""
     if KNOWLEDGE_STORE:
         context = "\n".join(KNOWLEDGE_STORE)
-        prompt = f"คุณเป็นผู้ช่วยผู้เชี่ยวชาญ จงใช้ข้อมูลบริบทต่อไปนี้เพื่อตอบคำถาม:\n{context}\n\nคำถาม: {request.question}"
+        prompt = f"คุณเป็นผู้ช่วยผู้เชี่ยวชาญ จงใช้บริบทต่อไปนี้ตอบคำถาม:\n{context}\n\nคำถาม: {request.question}"
     else:
         prompt = request.question
 
@@ -38,9 +38,9 @@ async def chat_with_gemini(request: QueryRequest):
         response = model.generate_content(prompt)
         return {"answer": response.text}
     except Exception as e:
-        return {"answer": f"เกิดข้อผิดพลาดในการเรียก AI: {str(e)}"}
+        return {"answer": f"เกิดข้อผิดพลาด: {str(e)}"}
 
-# --- Endpoint 2: สำหรับเพิ่มข้อความดิบเข้าคลัง ---
+# 2. Endpoint เพิ่มเติมตามที่คุณต้องการ - รับข้อความสด
 @app.post("/api/ingest", summary="ใส่ข้อมูลหรือข้อความดิบเข้าคลังความรู้")
 async def ingest_data(request: IngestRequest):
     if not request.content.strip():
@@ -48,7 +48,7 @@ async def ingest_data(request: IngestRequest):
     KNOWLEDGE_STORE.append(request.content)
     return {"status": "success", "message": "บันทึกข้อความเข้าคลัง RAG เรียบร้อยแล้ว!"}
 
-# --- Endpoint 3: สำหรับอัปโหลดไฟล์ข้อความ ---
+# 3. Endpoint เพิ่มเติมตามที่คุณต้องการ - รับไฟล์ TXT
 @app.post("/api/upload", summary="อัปโหลดไฟล์ข้อความ (.txt) เข้าระบบ")
 async def upload_file(file: UploadFile = File(...)):
     if not file.filename.endswith('.txt'):
