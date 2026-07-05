@@ -1,9 +1,8 @@
 import os
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 import google.generativeai as genai
 
-# 🟢 ประกาศตัวแปรอ็อบเจกต์หลัก (ห้ามขาดบรรทัดนี้เด็ดขาด!)
 app = FastAPI(title="AI RAG API Service with Gemini")
 
 # คลังเก็บความรู้จำลองในหน่วยความจำ
@@ -20,7 +19,7 @@ class QueryRequest(BaseModel):
 class IngestRequest(BaseModel):
     content: str
 
-# 1. Endpoint เดิมสำหรับใช้ Chat
+# 1. Endpoint สำหรับคุยและดึงความรู้ RAG
 @app.post("/api/chat")
 async def chat_with_gemini(request: QueryRequest):
     if not GEMINI_API_KEY:
@@ -40,7 +39,7 @@ async def chat_with_gemini(request: QueryRequest):
     except Exception as e:
         return {"answer": f"เกิดข้อผิดพลาด: {str(e)}"}
 
-# 2. Endpoint เพิ่มเติมตามที่คุณต้องการ - รับข้อความสด
+# 2. Endpoint สำหรับเพิ่มข้อความดิบเข้าคลัง RAG
 @app.post("/api/ingest", summary="ใส่ข้อมูลหรือข้อความดิบเข้าคลังความรู้")
 async def ingest_data(request: IngestRequest):
     if not request.content.strip():
@@ -48,15 +47,15 @@ async def ingest_data(request: IngestRequest):
     KNOWLEDGE_STORE.append(request.content)
     return {"status": "success", "message": "บันทึกข้อความเข้าคลัง RAG เรียบร้อยแล้ว!"}
 
-# 3. Endpoint เพิ่มเติมตามที่คุณต้องการ - รับไฟล์ TXT
-@app.post("/api/upload", summary="อัปโหลดไฟล์ข้อความ (.txt) เข้าระบบ")
-async def upload_file(file: UploadFile = File(...)):
-    if not file.filename.endswith('.txt'):
-        return {"status": "error", "message": "ระบบรองรับเฉพาะไฟล์นามสกุล .txt เท่านั้น"}
+# 3. Endpoint สำหรับอัปโหลดข้อความ (ใช้ Raw Request เพื่อป้องกันปัญหาคอนเทนเนอร์ขาด python-multipart)
+@app.post("/api/upload", summary="อัปโหลดข้อความหรือไฟล์ Raw Text เข้าคลัง RAG")
+async def upload_file(request: Request):
     try:
-        body = await file.read()
+        body = await request.body()
         text_content = body.decode("utf-8")
+        if not text_content.strip():
+            return {"status": "error", "message": "ไม่พบเนื้อหาข้อความ"}
         KNOWLEDGE_STORE.append(text_content)
-        return {"status": "success", "filename": file.filename, "message": "สับย่อยไฟล์เข้าคลัง RAG สำเร็จ!"}
+        return {"status": "success", "message": "นำเข้าข้อมูลเข้าคลัง RAG สำเร็จ!"}
     except Exception as e:
         return {"status": "error", "message": f"เกิดข้อผิดพลาด: {str(e)}"}
