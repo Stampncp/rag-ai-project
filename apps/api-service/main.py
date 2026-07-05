@@ -47,7 +47,7 @@ async def ingest_data(request: IngestRequest):
     KNOWLEDGE_STORE.append(request.content)
     return {"status": "success", "message": "บันทึกข้อความเข้าคลัง RAG เรียบร้อยแล้ว!"}
 
-# 3. Endpoint สำหรับอัปโหลดข้อความ (ใช้ Raw Request เพื่อป้องกันปัญหาคอนเทนเนอร์ขาด python-multipart)
+# 3. Endpoint สำหรับอัปโหลดข้อความ (ใช้ Raw Request ป้องกันปัญหาคอนเทนเนอร์ขาด Library)
 @app.post("/api/upload", summary="อัปโหลดข้อความหรือไฟล์ Raw Text เข้าคลัง RAG")
 async def upload_file(request: Request):
     try:
